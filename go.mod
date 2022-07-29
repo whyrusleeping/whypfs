@@ -3,10 +3,11 @@ module github.com/whyrusleeping/whypfs
 go 1.17
 
 require (
+	github.com/application-research/go-pinmgr v0.0.0-20220729010902-461dca61ed84
 	github.com/ipfs/go-bitswap v0.6.0
 	github.com/ipfs/go-blockservice v0.3.0
-	github.com/ipfs/go-cid v0.1.0
-	github.com/ipfs/go-cidutil v0.0.2
+	github.com/ipfs/go-cid v0.2.0
+	github.com/ipfs/go-cidutil v0.1.0
 	github.com/ipfs/go-datastore v0.5.1
 	github.com/ipfs/go-ds-flatfs v0.5.1
 	github.com/ipfs/go-ds-leveldb v0.5.0
@@ -18,6 +19,7 @@ require (
 	github.com/ipfs/go-merkledag v0.6.0
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-unixfs v0.3.1
+	github.com/ipld/go-car v0.4.0
 	github.com/labstack/echo/v4 v4.7.2
 	github.com/libp2p/go-libp2p v0.19.2
 	github.com/libp2p/go-libp2p-connmgr v0.4.0
@@ -41,7 +43,7 @@ require (
 	github.com/antzucaro/matchr v0.0.0-20210222213004-b04723ef80f0 // indirect
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/btcsuite/btcd v0.22.0-beta // indirect
+	github.com/btcsuite/btcd v0.22.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/cheekybits/genny v1.0.0 // indirect
@@ -52,6 +54,7 @@ require (
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
+	github.com/filecoin-project/go-ulimit v0.0.0-20220526030355-e9ff1445536a // indirect
 	github.com/flynn/noise v1.0.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
@@ -83,8 +86,8 @@ require (
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/ipfs/go-peertaskqueue v0.7.0 // indirect
 	github.com/ipfs/go-verifcid v0.0.1 // indirect
-	github.com/ipld/go-codec-dagpb v1.3.0 // indirect
-	github.com/ipld/go-ipld-prime v0.11.0 // indirect
+	github.com/ipld/go-codec-dagpb v1.3.1 // indirect
+	github.com/ipld/go-ipld-prime v0.16.0 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
 	github.com/jackc/pgconn v1.12.1 // indirect
 	github.com/jackc/pgio v1.0.0 // indirect
@@ -188,7 +191,7 @@ require (
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
 	golang.org/x/net v0.0.0-20220418201149-a630d4f3e7a2 // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.10 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect

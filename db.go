@@ -4,17 +4,22 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/ipfs/go-cid"
 )
 
 type Pin struct {
-	ID      uint `gorm:"primarykey"`
-	Name    string
-	Cid     DbCID
-	Active  bool
-	Pinning bool
-	Size    int64
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	Name      string
+	Cid       DbCID
+	Active    bool
+	Failed    bool
+	Pinning   bool
+	Size      int64
+	Recursive bool
+	PinMeta   string `json:"pinMeta"`
 }
 
 type Object struct {

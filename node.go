@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	pinner "github.com/application-research/go-pinmgr"
 	"github.com/ipfs/go-bitswap"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
@@ -83,12 +84,18 @@ type Node struct {
 	StorageDir string
 
 	Bitswap *bitswap.Bitswap
+	PinMgr  *pinner.PinManager
 
 	Bwc *metrics.BandwidthCounter
 
 	DB *gorm.DB
 
 	Cfg *Config
+
+	pinLk   sync.Mutex
+	pinJobs map[uint]*pinner.PinningOperation
+
+	blocksLk sync.Mutex
 
 	inflightCids   map[cid.Cid]uint
 	inflightCidsLk sync.Mutex
@@ -262,8 +269,13 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		Cfg:        cfg,
 		DB:         db,
 
+		pinJobs:      make(map[uint]*pinner.PinningOperation),
 		inflightCids: make(map[cid.Cid]uint),
 	}
+
+	pmgr := pinner.NewPinManager(nd.doPinning, nil, pinner.DefaultOpts)
+
+	nd.PinMgr = pmgr
 
 	provq, err := queue.NewQueue(context.Background(), "provq", ds)
 	if err != nil {

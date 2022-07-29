@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/filecoin-project/go-ulimit"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-cidutil"
@@ -18,6 +20,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer/balanced"
 	ihelper "github.com/ipfs/go-unixfs/importer/helpers"
+	"github.com/ipld/go-car"
 	"github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multihash"
 
@@ -66,6 +69,15 @@ func main() {
 
 		repo := cctx.String("repo")
 
+		ch, nlim, err := ulimit.ManageFdLimit(50000)
+		if err != nil {
+			return err
+		}
+
+		if ch {
+			log.Infof("changed file descriptor limit to %d", nlim)
+		}
+
 		if err := ensureRepoExists(repo); err != nil {
 			return err
 		}
@@ -107,9 +119,22 @@ func main() {
 		e := echo.New()
 
 		unixfs := e.Group("/unixfs")
-		unixfs.POST("/add", s.HandleAddFile)
+		unixfs.POST("/add", s.handleAddFile)
 
-		repo := e.Group("/repo")
+		ipld := e.Group("/ipld")
+		ipld.POST("/import", s.handleImportCar)
+
+		pinning := e.Group("/pinning")
+		pinning.Use(openApiMiddleware)
+		//pinning.Use(s.AuthRequired(util.PermLevelUser))
+		pinning.GET("/pins", s.handleListPins)
+		pinning.POST("/pins", s.handleAddPin)
+		pinning.GET("/pins/:pinid", s.handleGetPin)
+		pinning.POST("/pins/:pinid", s.handleReplacePin)
+		pinning.DELETE("/pins/:pinid", s.handleDeletePin)
+
+		rep := e.Group("/repo")
+		rep.GET("/stat", s.HandleRepoStat)
 
 		return e.Start(cctx.String("api"))
 	}
@@ -123,7 +148,7 @@ type Server struct {
 	Node *Node
 }
 
-func (s *Server) HandleAddFile(c echo.Context) error {
+func (s *Server) handleAddFile(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAddFile")
 	defer span.End()
 
@@ -352,6 +377,69 @@ func (nd *Node) addObjectsToDatabase(ctx context.Context, content uint, dserv ip
 	return nil
 }
 
+func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
+	_, span := s.tracer.Start(ctx, "loadCar")
+	defer span.End()
+
+	return car.LoadCar(ctx, bs, r)
+}
+
+// handleImportCar godoc
+// @Summary      Add Car object
+// @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
+// @Tags         content
+// @Produce      json
+// @Param        body body string true "Car"
+// @Param 		 filename query string false "Filename"
+// @Param 		 commp query string false "Commp"
+// @Param 		 size query string false "Size"
+// @Router       /content/add-car [post]
+func (s *Server) handleImportCar(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	defer c.Request().Body.Close()
+	header, err := s.loadCar(ctx, s.Node.Blockstore, c.Request().Body)
+	if err != nil {
+		return err
+	}
+
+	if len(header.Roots) != 1 {
+		// if someone wants this feature, let me know
+		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
+	}
+	rootCID := header.Roots[0]
+
+	/*
+		if c.QueryParam("ignore-dupes") == "true" {
+			isDup, err := s.isDupCIDContent(c, rootCID, u)
+			if err != nil || isDup {
+				return err
+			}
+		}
+	*/
+
+	// TODO: how to specify filename?
+	filename := rootCID.String()
+	if qpname := c.QueryParam("filename"); qpname != "" {
+		filename = qpname
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, nil)
+	dserv := merkledag.NewDAGService(bserv)
+
+	cont, err := s.Node.addDatabaseTracking(ctx, dserv, s.Node.Blockstore, rootCID, filename)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		if err := s.Node.Provider.Provide(rootCID); err != nil {
+			log.Warnf("failed to announce providers: %s", err)
+		}
+	}()
+	return c.JSON(http.StatusOK, map[string]interface{}{"content": cont})
+}
+
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
 	_, span := s.tracer.Start(ctx, "importFile")
 	defer span.End()
@@ -406,4 +494,73 @@ func ensureRepoExists(dir string) error {
 	}
 
 	return nil
+}
+
+type RepoStat struct {
+	TotalSize int64
+}
+
+func (s *Server) HandleRepoStat(e echo.Context) error {
+
+	var size int64
+	if err := s.Node.DB.Model("object").Select("sum(size)").Scan(&size).Error; err != nil {
+		return err
+	}
+
+	return e.JSON(200, &RepoStat{
+		TotalSize: size,
+	})
+}
+
+type HttpError struct {
+	Code    int
+	Reason  string
+	Details string
+}
+
+func (he HttpError) Error() string {
+	return he.Reason
+}
+
+type HttpErrorResponse struct {
+	Error HttpError `json:"error"`
+}
+
+// this is required as ipfs pinning spec has strong requirements on response format
+func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		err := next(c)
+		if err == nil {
+			return nil
+		}
+
+		var httpRespErr *HttpError
+		if xerrors.As(err, &httpRespErr) {
+			log.Errorf("handler error: %s", err)
+			return c.JSON(httpRespErr.Code, &HttpErrorResponse{
+				Error: HttpError{
+					Reason:  httpRespErr.Reason,
+					Details: httpRespErr.Details,
+				},
+			})
+		}
+
+		var echoErr *echo.HTTPError
+		if xerrors.As(err, &echoErr) {
+			return c.JSON(echoErr.Code, &HttpErrorResponse{
+				Error: HttpError{
+					Reason:  http.StatusText(echoErr.Code),
+					Details: echoErr.Message.(string),
+				},
+			})
+		}
+
+		log.Errorf("handler error: %s", err)
+		return c.JSON(http.StatusInternalServerError, &HttpErrorResponse{
+			Error: HttpError{
+				Reason:  http.StatusText(http.StatusInternalServerError),
+				Details: err.Error(),
+			},
+		})
+	}
 }
